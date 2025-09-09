@@ -43,7 +43,7 @@ export const handler = async (event, context) => {
       }
     };
 
-const store = getStore(process.env.BLOBS_STORE || "customer-feedback");
+ const store = getStore(process.env.BLOBS_STORE || "customer-feedback");
     await store.setJSON(key, payload, {
       metadata: {
         rating: String(rating),

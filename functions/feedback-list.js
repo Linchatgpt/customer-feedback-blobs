@@ -4,7 +4,7 @@ export const handler = async (event) => {
   try {
     // 無金鑰版本：任何人都能讀取。?raw=1 會顯示未遮罩欄位（不建議）。
     const raw = event?.queryStringParameters?.raw === "1";
-const store = getStore(process.env.BLOBS_STORE || "customer-feedback");
+ const store = getStore(process.env.BLOBS_STORE || "customer-feedback");
 
     let items = [];
     let cursor;
