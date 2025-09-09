@@ -150,53 +150,60 @@
       }
     }
 
-    function viewRowHTML(r, selected) {
-      return `
-        <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
-        <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
-        <td class="px-3 py-2">${esc(String(r.rating ?? ""))}</td>
-        <td class="px-3 py-2">${esc(r.category || "")}</td>
-        <td class="px-3 py-2">${esc(r.name || "")}</td>
-        <td class="px-3 py-2">${esc(r.email || "")}</td>
-        <td class="px-3 py-2 max-w-xl whitespace-pre-wrap break-words">${esc(r.message || "")}</td>
-        <td class="px-3 py-2">
-          <div class="flex gap-2">
-            <button class="btn-edit rounded bg-amber-500 text-white px-2 py-1">編輯</button>
-            <button class="btn-del rounded bg-rose-600 text-white px-2 py-1">刪除</button>
-          </div>
-        </td>
+     function viewRowHTML(r, selected) {
+    return `
+      <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
+      <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
+      <td class="px-3 py-2">${esc(String(r.rating ?? ""))}</td>
+      <td class="px-3 py-2">${esc(r.category || "")}</td>
+      <td class="px-3 py-2">${esc(r.name || "")}</td>
+      <td class="px-3 py-2">${esc(r.email || "")}</td>
+      <td class="px-3 py-2 max-w-[28rem] md:max-w-[36rem]">
+        <div class="whitespace-pre-wrap break-words">${esc(r.message || "")}</div>
+      </td>
+      <!-- ✅ 黏在右側，永遠可見 -->
+      <td class="px-3 py-2 whitespace-nowrap sticky right-0 bg-white">
+        <div class="flex gap-2">
+          <button class="btn-edit rounded bg-amber-500 text-white px-2 py-1">編輯</button>
+          <button class="btn-del rounded bg-rose-600 text-white px-2 py-1">刪除</button>
+        </div>
+      </td>
       `;
     }
 
-    function editRowHTML(r, selected) {
-      const disPII = state.masked ? 'disabled title="已遮蔽，切換上方『顯示個資』再編輯"' : "";
-      return `
-        <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
-        <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
-        <td class="px-3 py-2">
-          <input name="rating" type="number" min="1" max="5" value="${escAttr(r.rating ?? "")}" class="border rounded px-2 py-1 w-16">
-        </td>
-        <td class="px-3 py-2">
-          <select name="category" class="border rounded px-2 py-1">
-            ${opt("","請選擇", r.category)}${opt("coaching","教練服務", r.category)}${opt("training","訓練課程", r.category)}
-            ${opt("materials","教材與資料", r.category)}${opt("support","客服與支援", r.category)}${opt("others","其他", r.category)}
-          </select>
-        </td>
-        <td class="px-3 py-2">
-          <input name="name" ${disPII} value="${escAttr(r.name || "")}" class="border rounded px-2 py-1 w-36">
-        </td>
-        <td class="px-3 py-2">
-          <input name="email" ${disPII} value="${escAttr(r.email || "")}" class="border rounded px-2 py-1 w-56">
-        </td>
-        <td class="px-3 py-2">
-          <textarea name="message" rows="3" class="border rounded px-2 py-1 w-96">${esc(r.message || "")}</textarea>
-        </td>
-        <td class="px-3 py-2">
-          <div class="flex gap-2">
-            <button class="btn-save rounded bg-emerald-600 text-white px-2 py-1">儲存</button>
-            <button class="btn-cancel rounded border px-2 py-1">放棄</button>
-          </div>
-        </td>
+function editRowHTML(r, selected) {
+    const disPII = state.masked ? 'disabled title="已遮蔽，切換上方『顯示個資』再編輯"' : "";
+    return `
+      <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
+      <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
+      <td class="px-3 py-2">
+        <input name="rating" type="number" min="1" max="5" value="${escAttr(r.rating ?? "")}"
+               class="border rounded px-2 py-1 w-16">
+      </td>
+      <td class="px-3 py-2">
+        <select name="category" class="border rounded px-2 py-1">
+          ${opt("","請選擇", r.category)}${opt("coaching","教練服務", r.category)}${opt("training","訓練課程", r.category)}
+          ${opt("materials","教材與資料", r.category)}${opt("support","客服與支援", r.category)}${opt("others","其他", r.category)}
+        </select>
+      </td>
+      <td class="px-3 py-2">
+        <input name="name" ${disPII} value="${escAttr(r.name || "")}" class="border rounded px-2 py-1 w-36">
+      </td>
+      <td class="px-3 py-2">
+        <input name="email" ${disPII} value="${escAttr(r.email || "")}" class="border rounded px-2 py-1 w-56">
+      </td>
+      <!-- 收斂內容欄位寬度，避免擠出畫面；小尺寸滿版、桌機上限 -->
+      <td class="px-3 py-2">
+        <textarea name="message" rows="3"
+          class="border rounded px-2 py-1 w-full max-w-[28rem] md:max-w-[36rem] md:w-[36rem]">${esc(r.message || "")}</textarea>
+      </td>
+      <!-- ✅ 黏住右側；小螢幕時自動換行堆疊 -->
+      <td class="px-3 py-2 whitespace-nowrap sticky right-0 bg-white">
+        <div class="flex gap-2 md:flex-row flex-col items-start">
+          <button class="btn-save rounded bg-emerald-600 text-white px-3 py-1">儲存</button>
+          <button class="btn-cancel rounded border px-3 py-1">放棄</button>
+        </div>
+      </td>
       `;
     }
 
