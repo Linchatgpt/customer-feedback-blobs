@@ -1,39 +1,24 @@
+// functions/feedback-list.js  (診斷版)
 import { getStore } from "@netlify/blobs";
 
-export default async (req) => {
+export default async () => {
   try {
-    const url = new URL(req.url);
-    const raw = url.searchParams.get("raw") === "1";
-
+    // v2 + 以「字串」傳入 store 名稱
     const store = getStore(process.env.BLOBS_STORE || "customer-feedback");
 
-    let items = [], cursor;
-    do {
-      const page = await store.list({ prefix: "feedback/", cursor, directories: false, paginate: true });
-      items.push(...page.blobs);
-      cursor = page.cursor;
-    } while (cursor);
+    // 先只列出鍵名，確認有寫入
+    const page = await store.list({ prefix: "feedback/", directories: false, paginate: false });
+    const keys = (page?.blobs || []).map(b => b.key);
 
-    items.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
-    items = items.slice(0, 100);
-
-    const results = [];
-    for (const it of items) {
-      const { value } = await store.getWithMetadata(it.key, { type: "json", consistency: "strong" });
-      const rec = { ...value };
-      if (!raw) {
-        delete rec.email; delete rec.name;
-        if (rec.meta) { delete rec.meta.ip; delete rec.meta.ua; delete rec.meta.referer; }
-      }
-      results.push(rec);
-    }
-
-    return new Response(JSON.stringify({ count: results.length, masked: !raw, data: results }), {
-      status: 200,
-      headers: { "Content-Type": "application/json; charset=utf-8" }
-    });
+    return new Response(
+      JSON.stringify({ ok: true, count: keys.length, keys }, null, 2),
+      { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" } }
+    );
   } catch (e) {
-    console.error(e);
-    return new Response("Server error", { status: 500 });
+    // 暫時把錯誤回傳，方便定位
+    return new Response(
+      JSON.stringify({ ok: false, error: String(e), stack: e?.stack }, null, 2),
+      { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" } }
+    );
   }
 };
