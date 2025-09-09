@@ -18,6 +18,7 @@
         </label>
         <button id="loadBtn" class="rounded-lg bg-emerald-600 text-white px-3 py-2">載入資料</button>
         <button id="delSelected" class="rounded-lg bg-rose-600 text-white px-3 py-2">刪除所選</button>
+        <button id="exportCsv" class="rounded-lg bg-blue-600 text-white px-3 py-2">匯出 CSV</button>
       </div>
     </header>
 
@@ -46,11 +47,10 @@
         </div>
         <div class="ml-auto flex gap-2">
           <button id="clearFilters" class="rounded-lg border px-3 py-2">清除篩選</button>
-          <button id="exportCsv" class="rounded-lg bg-blue-600 text-white px-3 py-2">匯出 CSV</button>
         </div>
       </div>
 
-      <!-- ✅ relative 讓右側 sticky 動作欄能正確固定 -->
+      <!-- relative 讓 sticky action 欄位能吸附右邊 -->
       <div class="overflow-x-auto relative mt-3">
         <table class="min-w-full text-sm" id="tbl">
           <thead>
@@ -79,6 +79,7 @@
     // 綁定事件
     $("loadBtn").addEventListener("click", loadData);
     $("delSelected").addEventListener("click", deleteSelected);
+    $("exportCsv").addEventListener("click", exportCsv);
     $("raw").addEventListener("change", loadData);
     $("q").addEventListener("input", applyFilters);
     $("category").addEventListener("change", applyFilters);
@@ -89,9 +90,8 @@
       state.view.forEach(r => checked ? state.sel.add(r._key) : state.sel.delete(r._key));
       renderTable();
     });
-    $("exportCsv").addEventListener("click", exportCsv);
 
-    // 載入資料
+    // 讀取資料
     async function loadData() {
       const showRaw = $("raw").checked;
       $("status").textContent = "載入中…";
@@ -112,7 +112,7 @@
       }
     }
 
-    // 篩選
+    // 篩選 + 排序
     function applyFilters() {
       const q = $("q").value.trim().toLowerCase();
       const cat = $("category").value;
@@ -138,12 +138,12 @@
         tr.className = "border-b align-top";
         tr.innerHTML = editing ? editRowHTML(r, selected) : viewRowHTML(r, selected);
 
-        // row checkbox
+        // 勾選
         tr.querySelector(".rowchk").addEventListener("change", (e) => {
           if (e.target.checked) state.sel.add(r._key); else state.sel.delete(r._key);
         });
 
-        // 操作按鈕
+        // 操作
         if (editing) {
           tr.querySelector(".btn-save").addEventListener("click", () => saveRow(r._key, tr));
           tr.querySelector(".btn-cancel").addEventListener("click", () => { state.editing = null; renderTable(); });
@@ -156,7 +156,7 @@
       }
     }
 
-    // 顯示列
+    // 展示列
     function viewRowHTML(r, selected) {
       return `
         <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
@@ -168,7 +168,6 @@
         <td class="px-3 py-2 max-w-[28rem] md:max-w-[36rem]">
           <div class="whitespace-pre-wrap break-words">${esc(r.message || "")}</div>
         </td>
-        <!-- 右側固定 -->
         <td class="px-3 py-2 whitespace-nowrap sticky right-0 bg-white">
           <div class="flex gap-2">
             <button class="btn-edit rounded bg-amber-500 text-white px-2 py-1">編輯</button>
@@ -200,10 +199,8 @@
           <input name="email" ${disPII} value="${escAttr(r.email || "")}" class="border rounded px-2 py-1 w-56">
         </td>
         <td class="px-3 py-2">
-          <!-- 收斂寬度，避免擠出畫面 -->
           <textarea name="message" rows="3" class="border rounded px-2 py-1 w-full max-w-[28rem] md:max-w-[36rem] md:w-[36rem]">${esc(r.message || "")}</textarea>
         </td>
-        <!-- 右側固定 -->
         <td class="px-3 py-2 whitespace-nowrap sticky right-0 bg-white">
           <div class="flex gap-2 md:flex-row flex-col items-start">
             <button class="btn-save rounded bg-emerald-600 text-white px-3 py-1">儲存</button>
@@ -224,7 +221,7 @@
       await callDelete([key]);
     }
 
-    // 多選刪除
+    // 批次刪除
     async function deleteSelected() {
       const keys = Array.from(state.sel);
       if (keys.length === 0) return alert("請先勾選要刪除的資料。");
@@ -252,13 +249,13 @@
       }
     }
 
-    // 儲存編輯
+    // 儲存單列變更
     async function saveRow(key, tr) {
       const q = (sel) => tr.querySelector(sel);
       const orig = state.raw.find(x => x._key === key);
       if (!orig) return alert("找不到資料列");
 
-      // 擷取當前輸入
+      // 擷取目前輸入
       const ratingVal = q('input[name="rating"]').value;
       const categoryVal = q('select[name="category"]').value;
       const nameVal = q('input[name="name"]').value;
@@ -279,7 +276,9 @@
       }
       if (msgVal !== (orig.message || "")) patch.message = msgVal;
 
-      if (Object.keys(patch).length === 0) { state.editing = null; renderTable(); return; }
+      if (Object.keys(patch).length === 0) {
+        state.editing = null; renderTable(); return;
+      }
 
       try {
         const res = await fetch("/.netlify/functions/feedback-update", {
@@ -303,38 +302,62 @@
       }
     }
 
-    // 匯出 CSV（含 BOM、CRLF、轉義）
-    function csvCell(val) {
-      if (val == null) return '""';
-      const s = String(val).replace(/"/g, '""').replace(/\r?\n/g, '\n');
-      return `"${s}"`;
-    }
+    // ===== 匯出 CSV（支援：僅勾選／是否含個資；含 BOM，Excel 友善） =====
     function exportCsv() {
-      try {
-        const data = (Array.isArray(state.view) && state.view.length) ? state.view : (state.raw || []);
-        const header = ["_key","created_at","rating","category","name","email","message"];
-        const lines = [header.join(",")];
-        for (const r of data) lines.push(header.map(k => csvCell(r[k])).join(","));
+      const hasSelection = state.sel.size > 0;
+      const onlySelected = hasSelection
+        ? confirm(`目前勾選 ${state.sel.size} 筆。\n按「確定」僅匯出勾選，按「取消」匯出目前篩選的全部。`)
+        : false;
 
-        const csv = "\ufeff" + lines.join("\r\n"); // BOM + CRLF
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-        const url  = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = `feedback_${new Date().toISOString().slice(0,10)}.csv`;
-        document.body.appendChild(a); a.click();
-        setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 0);
-
-        $("status")?.textContent = `已匯出 ${data.length} 筆為 CSV。`;
-      } catch (e) {
-        console.error("CSV export error:", e);
-        alert("CSV 匯出失敗：" + String(e).slice(0,200));
+      let includePII = false;
+      if (!state.masked) {
+        includePII = confirm("是否在 CSV 中包含姓名與 Email？\n（僅管理使用，請注意個資保存）");
       }
+
+      const data = (onlySelected
+        ? state.view.filter(r => state.sel.has(r._key))
+        : state.view
+      ).slice();
+
+      if (!data.length) { alert("沒有可匯出的資料。"); return; }
+
+      const columns = [
+        { key: "created_at", title: "時間" },
+        { key: "rating",     title: "評分" },
+        { key: "category",   title: "類別" },
+        { key: "message",    title: "內容" },
+      ];
+      if (includePII) {
+        columns.splice(3, 0, { key: "name", title: "姓名" }, { key: "email", title: "Email" });
+      }
+
+      const csv = buildCsv(data, columns);
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const date = new Date().toISOString().slice(0,10);
+      const scope = onlySelected ? "selected" : "filtered";
+      const pii = includePII ? "_withPII" : "";
+      a.href = url; a.download = `feedback_${scope}${pii}_${date}.csv`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     }
 
-    // 工具
+    function buildCsv(rows, columns) {
+      const header = columns.map(c => csvCell(c.title)).join(",");
+      const lines = [header];
+      for (const r of rows) {
+        const line = columns.map(c => csvCell(valueOrEmpty(r[c.key]))).join(",");
+        lines.push(line);
+      }
+      return lines.join("\n");
+    }
+
+    function valueOrEmpty(v) { return (v === null || v === undefined) ? "" : v; }
+    function csvCell(v) { const s = String(v); return `"${s.replace(/"/g, '""')}"`; }
+
+    // 工具：HTML 轉義
     function esc(s) { return String(s||"").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
     function escAttr(s){ return esc(String(s||"")); }
   </script>
 </body>
 </html>
-
