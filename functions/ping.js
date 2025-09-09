@@ -1,3 +1,2 @@
-export const handler = async () => {
-  return { statusCode: 200, body: "ok" };
-};
+// functions/ping.js
+export default async () => new Response("ok");
