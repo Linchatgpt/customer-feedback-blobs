@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>回饋管理後台（無金鑰）</title>
+  <title>回饋管理後台</title>
+  <meta name="robots" content="noindex,nofollow">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-800">
-  <main class="max-w-5xl mx-auto p-6 space-y-4">
+  <main class="max-w-6xl mx-auto p-6 space-y-4">
     <header class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       <h1 class="text-2xl font-bold">回饋管理後台（無金鑰）</h1>
       <div class="flex items-center gap-2">
@@ -16,13 +17,11 @@
           <span>顯示個資（不建議）</span>
         </label>
         <button id="loadBtn" class="rounded-lg bg-emerald-600 text-white px-3 py-2">載入資料</button>
-        <button id="refreshBtn" class="rounded-lg border px-3 py-2">重新整理</button>
+        <button id="delSelected" class="rounded-lg bg-rose-600 text-white px-3 py-2">刪除所選</button>
       </div>
     </header>
 
-    <p class="text-xs text-rose-600">
-      提醒：本頁為無金鑰公開版。預設遮蔽姓名/Email/IP；勾選「顯示個資」後，任何人皆可見。
-    </p>
+    <p id="status" class="text-sm text-slate-500">尚未載入。</p>
 
     <section class="bg-white rounded-2xl shadow p-4">
       <div class="flex flex-wrap gap-3 items-end">
@@ -51,18 +50,18 @@
         </div>
       </div>
 
-      <p id="status" class="text-sm text-slate-500 mt-3">尚未載入。</p>
-
       <div class="overflow-x-auto mt-3">
         <table class="min-w-full text-sm" id="tbl">
           <thead>
             <tr class="bg-slate-100 text-left">
+              <th class="px-3 py-2"><input id="chkAll" type="checkbox"></th>
               <th class="px-3 py-2">時間</th>
               <th class="px-3 py-2">評分</th>
               <th class="px-3 py-2">類別</th>
               <th class="px-3 py-2">姓名</th>
               <th class="px-3 py-2">Email</th>
               <th class="px-3 py-2">內容</th>
+              <th class="px-3 py-2">操作</th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -73,35 +72,40 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const state = { raw: [], view: [] };
+    const state = { raw: [], view: [], sel: new Set(), editing: null };
 
     $("loadBtn").addEventListener("click", loadData);
-    $("refreshBtn").addEventListener("click", loadData);
     $("q").addEventListener("input", applyFilters);
     $("category").addEventListener("change", applyFilters);
     $("minRating").addEventListener("change", applyFilters);
     $("clearFilters").addEventListener("click", () => {
-      $("q").value = "";
-      $("category").value = "";
-      $("minRating").value = 1;
-      applyFilters();
+      $("q").value = ""; $("category").value = ""; $("minRating").value = 1; applyFilters();
     });
     $("exportCsv").addEventListener("click", exportCsv);
+    $("delSelected").addEventListener("click", deleteSelected);
+    $("raw").addEventListener("change", loadData);
+    $("chkAll").addEventListener("change", (e) => {
+      const checked = e.target.checked;
+      state.view.forEach(r => checked ? state.sel.add(r._key) : state.sel.delete(r._key));
+      renderTable();
+    });
 
     async function loadData() {
-      $("status").textContent = "載入中…";
       const showRaw = $("raw").checked;
+      $("status").textContent = "載入中…";
       try {
         const res = await fetch("/.netlify/functions/feedback-list" + (showRaw ? "?raw=1" : ""));
-        if (!res.ok) throw new Error(await res.text());
-        const { data, masked } = await res.json();
+        const text = await res.text();
+        if (!res.ok) { $("status").textContent = `讀取失敗：HTTP ${res.status}｜${text.slice(0,200)}`; return; }
+        const { data, masked } = JSON.parse(text);
         state.raw = Array.isArray(data) ? data : [];
+        state.sel.clear();
+        $("chkAll").checked = false;
         $("status").textContent = `已載入 ${state.raw.length} 筆。` + (masked ? "（已遮蔽個資）" : "（顯示個資）");
         applyFilters();
       } catch (e) {
         console.error(e);
-        $("status").textContent = "載入失敗。";
-        alert("讀取失敗，請稍後再試。");
+        $("status").textContent = "讀取失敗。";
       }
     }
 
@@ -109,40 +113,154 @@
       const q = $("q").value.trim().toLowerCase();
       const cat = $("category").value;
       const minR = Number($("minRating").value || 1);
-
-      state.view = state.raw
-        .filter(r => {
-          const txt = [r.message, r.category, r.name, r.email].filter(Boolean).join(" ").toLowerCase();
-          const passQ = q ? txt.includes(q) : true;
-          const passCat = cat ? r.category === cat : true;
-          const passRating = typeof r.rating === "number" ? r.rating >= minR : false;
-          return passQ && passCat && passRating;
-        })
-        .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
-
+      state.view = state.raw.filter(r => {
+        const txt = [r.message, r.category, r.name, r.email].filter(Boolean).join(" ").toLowerCase();
+        const passQ = q ? txt.includes(q) : true;
+        const passCat = cat ? r.category === cat : true;
+        const passRating = typeof r.rating === "number" ? r.rating >= minR : false;
+        return passQ && passCat && passRating;
+      }).sort((a,b) => (b.created_at || "").localeCompare(a.created_at || ""));
       renderTable();
     }
 
     function renderTable() {
-      const tb = $("tbody");
-      tb.innerHTML = "";
+      const tb = $("tbody"); tb.innerHTML = "";
       for (const r of state.view) {
+        const selected = state.sel.has(r._key);
+        const editing = state.editing === r._key;
+
         const tr = document.createElement("tr");
         tr.className = "border-b align-top";
-        tr.innerHTML = `
-          <td class="px-3 py-2 whitespace-nowrap">${escapeHtml(r.created_at || "")}</td>
-          <td class="px-3 py-2">${escapeHtml(String(r.rating ?? ""))}</td>
-          <td class="px-3 py-2">${escapeHtml(r.category || "")}</td>
-          <td class="px-3 py-2">${escapeHtml(r.name || "")}</td>
-          <td class="px-3 py-2">${escapeHtml(r.email || "")}</td>
-          <td class="px-3 py-2 max-w-xl whitespace-pre-wrap break-words">${escapeHtml(r.message || "")}</td>
-        `;
+        tr.innerHTML = editing ? editRowHTML(r, selected) : viewRowHTML(r, selected);
+
+        // 綁事件
+        const chk = tr.querySelector(".rowchk");
+        chk.addEventListener("change", (e) => {
+          if (e.target.checked) state.sel.add(r._key);
+          else state.sel.delete(r._key);
+        });
+
+        if (editing) {
+          tr.querySelector(".btn-cancel").addEventListener("click", () => { state.editing = null; renderTable(); });
+          tr.querySelector(".btn-save").addEventListener("click", () => saveRow(r._key, tr));
+        } else {
+          tr.querySelector(".btn-edit").addEventListener("click", () => { state.editing = r._key; renderTable(); });
+          tr.querySelector(".btn-del").addEventListener("click", () => delOne(r._key));
+        }
+
         tb.appendChild(tr);
       }
     }
 
+    function viewRowHTML(r, selected) {
+      return `
+        <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
+        <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
+        <td class="px-3 py-2">${esc(String(r.rating ?? ""))}</td>
+        <td class="px-3 py-2">${esc(r.category || "")}</td>
+        <td class="px-3 py-2">${esc(r.name || "")}</td>
+        <td class="px-3 py-2">${esc(r.email || "")}</td>
+        <td class="px-3 py-2 max-w-xl whitespace-pre-wrap break-words">${esc(r.message || "")}</td>
+        <td class="px-3 py-2">
+          <div class="flex gap-2">
+            <button class="btn-edit rounded bg-amber-500 text-white px-2 py-1">編輯</button>
+            <button class="btn-del rounded bg-rose-600 text-white px-2 py-1">刪除</button>
+          </div>
+        </td>
+      `;
+    }
+
+    function editRowHTML(r, selected) {
+      return `
+        <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
+        <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
+        <td class="px-3 py-2">
+          <input name="rating" type="number" min="1" max="5" value="${escAttr(r.rating ?? "")}" class="border rounded px-2 py-1 w-16">
+        </td>
+        <td class="px-3 py-2">
+          <select name="category" class="border rounded px-2 py-1">
+            ${opt("","請選擇", r.category)}${opt("coaching","教練服務", r.category)}${opt("training","訓練課程", r.category)}
+            ${opt("materials","教材與資料", r.category)}${opt("support","客服與支援", r.category)}${opt("others","其他", r.category)}
+          </select>
+        </td>
+        <td class="px-3 py-2"><input name="name" value="${escAttr(r.name || "")}" class="border rounded px-2 py-1 w-36"></td>
+        <td class="px-3 py-2"><input name="email" value="${escAttr(r.email || "")}" class="border rounded px-2 py-1 w-56"></td>
+        <td class="px-3 py-2"><textarea name="message" rows="3" class="border rounded px-2 py-1 w-96">${esc(r.message || "")}</textarea></td>
+        <td class="px-3 py-2">
+          <div class="flex gap-2">
+            <button class="btn-save rounded bg-emerald-600 text-white px-2 py-1">儲存</button>
+            <button class="btn-cancel rounded border px-2 py-1">取消</button>
+          </div>
+        </td>
+      `;
+    }
+
+    function opt(val, label, current) {
+      const sel = (val === (current || "")) ? "selected" : "";
+      return `<option value="${escAttr(val)}" ${sel}>${esc(label)}</option>`;
+    }
+
+    async function delOne(key) {
+      if (!confirm("確定要刪除此筆？此動作無法復原。")) return;
+      await callDelete([key]);
+    }
+
+    async function deleteSelected() {
+      const keys = Array.from(state.sel);
+      if (keys.length === 0) return alert("請先勾選要刪除的資料。");
+      if (!confirm(`確定刪除 ${keys.length} 筆？此動作無法復原。`)) return;
+      await callDelete(keys);
+    }
+
+    async function callDelete(keys) {
+      try {
+        const res = await fetch("/.netlify/functions/feedback-delete", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keys })
+        });
+        const j = await res.json().catch(()=> ({}));
+        if (!res.ok || !j) throw new Error(await res.text());
+        const del = new Set(j.deleted || []);
+        state.raw = state.raw.filter(x => !del.has(x._key));
+        state.sel.clear(); $("chkAll").checked = false;
+        $("status").textContent = `刪除完成，移除 ${del.size} 筆。`;
+        applyFilters();
+      } catch (e) {
+        console.error(e);
+        alert("刪除失敗：" + String(e).slice(0,200));
+      }
+    }
+
+    async function saveRow(key, tr) {
+      const q = (sel) => tr.querySelector(sel);
+      const patch = {
+        rating: Number(q('input[name="rating"]').value || 0),
+        category: q('select[name="category"]').value || "",
+        name: q('input[name="name"]').value || "",
+        email: q('input[name="email"]').value || "",
+        message: q('textarea[name="message"]').value || ""
+      };
+      try {
+        const res = await fetch("/.netlify/functions/feedback-update", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, patch })
+        });
+        const j = await res.json().catch(()=> ({}));
+        if (!res.ok || !j?.ok) throw new Error(await res.text());
+        // 更新本地資料
+        const i = state.raw.findIndex(x => x._key === key);
+        if (i >= 0) state.raw[i] = { ...state.raw[i], ...patch, updated_at: new Date().toISOString() };
+        state.editing = null;
+        $("status").textContent = "已儲存變更。";
+        applyFilters();
+      } catch (e) {
+        console.error(e);
+        alert("儲存失敗：" + String(e).slice(0,200));
+      }
+    }
+
     function exportCsv() {
-      const header = ["created_at","rating","category","name","email","message"];
+      const header = ["_key","created_at","rating","category","name","email","message"];
       const lines = [header.join(",")];
       for (const r of state.view) {
         const row = header.map(k => csvCell(r[k]));
@@ -152,25 +270,16 @@
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = `feedback_export_${new Date().toISOString().slice(0,10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      a.href = url; a.download = `feedback_export_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     }
 
-    function csvCell(v) {
-      if (v == null) return '""';
-      const s = String(v).replace(/"/g, '""');
-      return `"${s}"`;
-    }
+    function csvCell(v) { if (v == null) return '""'; const s = String(v).replace(/"/g, '""'); return `"${s}"`; }
+    function esc(s) { return String(s||"").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
+    function escAttr(s){ return esc(String(s||"")); }
 
-    function escapeHtml(s) {
-      return String(s || "").replace(/[&<>"']/g, m => ({
-        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-      }[m]));
-    }
+    // 初次載入（可選）
+    // loadData();
   </script>
 </body>
 </html>

@@ -1,15 +1,19 @@
-// functions/feedback-list.js  （v2／免金鑰／相容耐錯版）
+// functions/feedback-list.js
 import { getStore } from "@netlify/blobs";
 
 export default async (req) => {
-  const url = new URL(req.url);
-  const raw = url.searchParams.get("raw") === "1";
-  const debug = url.searchParams.get("debug") === "1";
+  // 安全解析查詢參數（req.url 可能是相對路徑）
+  let raw = false, debug = false;
+  try {
+    const base = process.env.URL || "https://example.com";
+    const url = new URL(req.url, base);
+    raw = url.searchParams.get("raw") === "1";
+    debug = url.searchParams.get("debug") === "1";
+  } catch {}
 
   try {
-    const store = getStore(process.env.BLOBS_STORE || "customer-feedback"); // v2 + 字串
+    const store = getStore(process.env.BLOBS_STORE || "customer-feedback");
 
-    // 先列出 key，再逐筆讀內容（最多 100 筆）
     const page = await store.list({ prefix: "feedback/", directories: false, paginate: false });
     const items = (page?.blobs || [])
       .sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""))
@@ -20,36 +24,28 @@ export default async (req) => {
 
     for (const it of items) {
       try {
-        let rec;
-
-        // 優先使用 getWithMetadata(type: 'json')；若不存在或失敗，逐層退回
+        let rec = null;
         if (typeof store.getWithMetadata === "function") {
-          const out = await store.getWithMetadata(it.key, { type: "json", consistency: "strong" });
+          const out = await store.getWithMetadata(it.key, { type: "json" });
           rec = out?.value ?? null;
         }
+        if (!rec) rec = await store.get(it.key, { type: "json" });
         if (!rec) {
-          // 部分版本僅支援 get(type: 'json')
-          rec = await store.get(it.key, { type: "json", consistency: "strong" });
-        }
-        if (!rec) {
-          // 最後退回以文字讀取，再自行 JSON.parse
-          const txt = await store.get(it.key, { consistency: "strong" });
+          const txt = await store.get(it.key);
           rec = txt ? JSON.parse(txt) : null;
         }
-        if (!rec) continue; // 空值就略過
+        if (!rec) continue;
 
         // 預設遮蔽個資
         if (!raw) {
-          delete rec.email;
-          delete rec.name;
+          delete rec.email; delete rec.name;
           if (rec.meta) { delete rec.meta.ip; delete rec.meta.ua; delete rec.meta.referer; }
         }
 
-        results.push(rec);
+        // ✅ 回傳 _key 供刪除／修改使用
+        results.push({ _key: it.key, ...rec });
       } catch (e) {
-        // 單筆失敗不影響整體
         errors.push({ key: it.key, message: String(e) });
-        continue;
       }
     }
 
@@ -58,8 +54,13 @@ export default async (req) => {
       { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" } }
     );
   } catch (e) {
-    // 若還是出錯，可加上 ?debug=1 觀察
-    const body = debug ? JSON.stringify({ ok: false, error: String(e), stack: e?.stack }, null, 2) : "Server error";
-    return new Response(body, { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" } });
+    const body = debug
+      ? JSON.stringify({ ok: false, error: String(e), stack: e?.stack }, null, 2)
+      : "Server error";
+    return new Response(body, {
+      status: 500,
+      headers: { "Content-Type": debug ? "application/json; charset=utf-8" : "text/plain; charset=utf-8" }
+    });
   }
-}
+};
+
