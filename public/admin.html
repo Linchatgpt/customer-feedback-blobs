@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>回饋管理後台 | 精萃提問教練</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800">
+  <main class="max-w-5xl mx-auto p-6 space-y-4">
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl font-bold">回饋管理後台</h1>
+      <div class="flex items-center gap-2">
+        <input id="adminKey" type="password" class="border rounded-lg px-3 py-2 w-72" placeholder="貼上 ADMIN_KEY（僅本機儲存）">
+        <button id="saveKey" class="rounded-lg bg-slate-800 text-white px-3 py-2">儲存金鑰</button>
+        <button id="loadBtn" class="rounded-lg bg-emerald-600 text-white px-3 py-2">載入資料</button>
+      </div>
+    </header>
+
+    <section class="bg-white rounded-2xl shadow p-4">
+      <div class="flex flex-wrap gap-3 items-end">
+        <div>
+          <label class="block text-sm font-medium mb-1">關鍵字（訊息 / 類別 / 姓名 / Email）</label>
+          <input id="q" class="border rounded-lg px-3 py-2 w-80" placeholder="輸入關鍵字過濾">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">類別</label>
+          <select id="category" class="border rounded-lg px-3 py-2">
+            <option value="">全部</option>
+            <option value="coaching">教練服務</option>
+            <option value="training">訓練課程</option>
+            <option value="materials">教材與資料</option>
+            <option value="support">客服與支援</option>
+            <option value="others">其他</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">評分≧</label>
+          <input id="minRating" type="number" min="1" max="5" class="border rounded-lg px-3 py-2 w-24" value="1">
+        </div>
+        <div class="ml-auto flex gap-2">
+          <button id="clearFilters" class="rounded-lg border px-3 py-2">清除篩選</button>
+          <button id="exportCsv" class="rounded-lg bg-blue-600 text-white px-3 py-2">匯出 CSV</button>
+        </div>
+      </div>
+
+      <p id="status" class="text-sm text-slate-500 mt-3">尚未載入。</p>
+
+      <div class="overflow-x-auto mt-3">
+        <table class="min-w-full text-sm" id="tbl">
+          <thead>
+            <tr class="bg-slate-100 text-left">
+              <th class="px-3 py-2">時間</th>
+              <th class="px-3 py-2">評分</th>
+              <th class="px-3 py-2">類別</th>
+              <th class="px-3 py-2">姓名</th>
+              <th class="px-3 py-2">Email</th>
+              <th class="px-3 py-2">內容</th>
+              <th class="px-3 py-2">來源</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { raw: [], view: [] };
+
+    // 讀寫本機儲存的 ADMIN_KEY
+    (function initKey() {
+      const k = localStorage.getItem("admin_key") || "";
+      $("adminKey").value = k;
+    })();
+
+    $("saveKey").addEventListener("click", () => {
+      localStorage.setItem("admin_key", $("adminKey").value.trim());
+      alert("已儲存。");
+    });
+
+    $("loadBtn").addEventListener("click", loadData);
+    $("q").addEventListener("input", applyFilters);
+    $("category").addEventListener("change", applyFilters);
+    $("minRating").addEventListener("change", applyFilters);
+    $("clearFilters").addEventListener("click", () => {
+      $("q").value = "";
+      $("category").value = "";
+      $("minRating").value = 1;
+      applyFilters();
+    });
+    $("exportCsv").addEventListener("click", exportCsv);
+
+    async function loadData() {
+      const key = $("adminKey").value.trim();
+      if (!key) return alert("請先貼上 ADMIN_KEY。");
+      $("status").textContent = "載入中…";
+
+      try {
+        const res = await fetch("/.netlify/functions/feedback-list", {
+          headers: { "x-admin-key": key }
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const { data } = await res.json();
+        state.raw = Array.isArray(data) ? data : [];
+        $("status").textContent = `已載入 ${state.raw.length} 筆。`;
+        applyFilters();
+      } catch (e) {
+        console.error(e);
+        $("status").textContent = "載入失敗。";
+        alert("讀取失敗，請確認金鑰或稍後再試。");
+      }
+    }
+
+    function applyFilters() {
+      const q = $("q").value.trim().toLowerCase();
+      const cat = $("category").value;
+      const minR = Number($("minRating").value || 1);
+
+      state.view = state.raw.filter(r => {
+        const txt = [r.message, r.category, r.name, r.email].filter(Boolean).join(" ").toLowerCase();
+        const passQ = q ? txt.includes(q) : true;
+        const passCat = cat ? r.category === cat : true;
+        const passRating = typeof r.rating === "number" ? r.rating >= minR : false;
+        return passQ && passCat && passRating;
+      }).sort((a,b) => (b.created_at || "").localeCompare(a.created_at || ""));
+
+      renderTable();
+    }
+
+    function renderTable() {
+      const tb = $("tbody");
+      tb.innerHTML = "";
+      for (const r of state.view) {
+        const tr = document.createElement("tr");
+        tr.className = "border-b";
+        tr.innerHTML = `
+          <td class="px-3 py-2 whitespace-nowrap">${escapeHtml(r.created_at || "")}</td>
+          <td class="px-3 py-2">${escapeHtml(String(r.rating ?? ""))}</td>
+          <td class="px-3 py-2">${escapeHtml(r.category || "")}</td>
+          <td class="px-3 py-2">${escapeHtml(r.name || "")}</td>
+          <td class="px-3 py-2">${escapeHtml(r.email || "")}</td>
+          <td class="px-3 py-2 max-w-xl"><div class="line-clamp-3">${escapeHtml(r.message || "")}</div></td>
+          <td class="px-3 py-2 text-xs text-slate-500">${escapeHtml(r?.meta?.referer || r?.meta?.ua || "")}</td>
+        `;
+        tb.appendChild(tr);
+      }
+    }
+
+    function exportCsv() {
+      const header = ["created_at","rating","category","name","email","message"];
+      const lines = [header.join(",")];
+      for (const r of state.view) {
+        const row = header.map(k => csvCell(r[k]));
+        lines.push(row.join(","));
+      }
+      const csv = lines.join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `feedback_export_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function csvCell(v) {
+      if (v == null) return '""';
+      const s = String(v).replace(/"/g, '""');
+      return `"${s}"`;
+    }
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/[&<>"']/g, m => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[m]));
+    }
+  </script>
+</body>
+</html>

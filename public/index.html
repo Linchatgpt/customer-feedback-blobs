@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>客戶回饋表 | 精萃提問教練</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-emerald-50 to-white text-slate-800">
+  <main class="max-w-xl mx-auto p-6">
+    <header class="text-center mb-6">
+      <h1 class="text-2xl font-bold">您的回饋，幫助我們做得更好</h1>
+      <p class="text-sm text-slate-600">填寫約 1 分鐘；資料僅用於服務改善與內部<strong>績效評估</strong>。</p>
+    </header>
+
+    <form id="fbForm" class="bg-white rounded-2xl shadow p-6 space-y-4">
+      <input type="text" name="website" class="hidden" autocomplete="off" tabindex="-1" aria-hidden="true" />
+
+      <div>
+        <label class="block text-sm font-medium mb-1">您的稱呼（選填）</label>
+        <input name="name" class="w-full border rounded-lg px-3 py-2" placeholder="王小姐 / 張經理" />
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">Email（選填）</label>
+        <input name="email" type="email" class="w-full border rounded-lg px-3 py-2" placeholder="name@company.com" />
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">滿意度（1-5）<span class="text-rose-600">*</span></label>
+        <input name="rating" type="number" min="1" max="5" required class="w-24 border rounded-lg px-3 py-2" />
+        <p class="text-xs text-slate-500 mt-1">5＝非常滿意；1＝非常不滿意</p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">回饋類別（選填）</label>
+        <select name="category" class="w-full border rounded-lg px-3 py-2">
+          <option value="">請選擇</option>
+          <option value="coaching">教練服務</option>
+          <option value="training">訓練課程</option>
+          <option value="materials">教材與資料</option>
+          <option value="support">客服與支援</option>
+          <option value="others">其他</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">您的回饋內容<span class="text-rose-600">*</span></label>
+        <textarea name="message" required rows="5" class="w-full border rounded-lg px-3 py-2" placeholder="可分享亮點、待改善處、建議的優先事項…"></textarea>
+      </div>
+
+      <label class="flex items-start gap-2 text-sm">
+        <input id="consent" type="checkbox" class="mt-1" />
+        <span>我同意將上述資料提供作為服務改善與內部統計之用。</span>
+      </label>
+
+      <button id="submitBtn" class="w-full rounded-xl bg-emerald-600 text-white py-2.5 font-medium hover:opacity-90 transition">
+        送出回饋
+      </button>
+
+      <p id="msg" class="text-center text-sm"></p>
+    </form>
+  </main>
+
+  <script>
+    const form = document.getElementById("fbForm");
+    const btn = document.getElementById("submitBtn");
+    const msg = document.getElementById("msg");
+    const consent = document.getElementById("consent");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      msg.textContent = "";
+      btn.disabled = true;
+
+      const fd = new FormData(form);
+      const payload = {
+        name: fd.get("name")?.trim() || "",
+        email: fd.get("email")?.trim() || "",
+        rating: Number(fd.get("rating")),
+        category: fd.get("category") || "",
+        message: fd.get("message")?.trim(),
+        consent: consent.checked,
+        website: fd.get("website")
+      };
+
+      try {
+        const res = await fetch("/.netlify/functions/feedback-submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error(await res.text());
+
+        msg.textContent = "✅ 感謝您的回饋！我們已收到。";
+        form.reset();
+        consent.checked = false;
+      } catch (err) {
+        console.error(err);
+        msg.textContent = "❌ 送出失敗，請稍後再試或與我們聯繫。";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
