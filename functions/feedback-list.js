@@ -1,4 +1,4 @@
-// functions/feedback-list.js
+// functions/feedback-list.js  （v2／免金鑰／穩定耐錯＋回傳 _key）
 import { getStore } from "@netlify/blobs";
 
 export default async (req) => {
@@ -14,6 +14,7 @@ export default async (req) => {
   try {
     const store = getStore(process.env.BLOBS_STORE || "customer-feedback");
 
+    // 先列 key，再逐筆讀取（最多 100 筆）
     const page = await store.list({ prefix: "feedback/", directories: false, paginate: false });
     const items = (page?.blobs || [])
       .sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""))
@@ -42,7 +43,7 @@ export default async (req) => {
           if (rec.meta) { delete rec.meta.ip; delete rec.meta.ua; delete rec.meta.referer; }
         }
 
-        // ✅ 回傳 _key 供刪除／修改使用
+        // ✅ 回傳 _key 供刪除／更新使用
         results.push({ _key: it.key, ...rec });
       } catch (e) {
         errors.push({ key: it.key, message: String(e) });
@@ -63,4 +64,3 @@ export default async (req) => {
     });
   }
 };
-

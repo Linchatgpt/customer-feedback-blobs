@@ -1,52 +1,64 @@
+// functions/feedback-update.js  （v2／免金鑰／容錯與可讀錯誤）
 import { getStore } from "@netlify/blobs";
 
 export default async (req) => {
   try {
-    if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+    if (req.method !== "POST") {
+      return new Response(JSON.stringify({ ok: false, error: "Method Not Allowed" }), { status: 405 });
+    }
 
     const ct = req.headers.get("content-type") || "";
-    if (!ct.includes("application/json")) return new Response("Invalid content type", { status: 400 });
+    if (!ct.includes("application/json")) {
+      return new Response(JSON.stringify({ ok: false, error: "Invalid content type" }), { status: 400 });
+    }
 
-    const { key, patch } = await req.json();
+    const { key, patch } = await req.json().catch(() => ({}));
     if (!key || !String(key).startsWith("feedback/")) {
-      return new Response("Bad Request: key (prefix feedback/) is required", { status: 400 });
+      return new Response(JSON.stringify({ ok: false, error: "Bad Request: key (prefix feedback/) is required" }), { status: 400 });
     }
     if (!patch || typeof patch !== "object") {
-      return new Response("Bad Request: patch object is required", { status: 400 });
+      return new Response(JSON.stringify({ ok: false, error: "Bad Request: patch object is required" }), { status: 400 });
     }
 
     const store = getStore(process.env.BLOBS_STORE || "customer-feedback");
 
-    // 讀現有
+    // 讀現有（具容錯）
     let rec = await store.get(key, { type: "json" });
     if (!rec) {
       const txt = await store.get(key);
       rec = txt ? JSON.parse(txt) : null;
     }
-    if (!rec) return new Response("Not Found", { status: 404 });
+    if (!rec) return new Response(JSON.stringify({ ok: false, error: "Not Found" }), { status: 404 });
 
-    // 合併 patch（允許修改的欄位）
-    const allowed = ["name", "email", "rating", "category", "message"];
+    // 僅允許這些欄位
+    const allowed = new Set(["name", "email", "rating", "category", "message"]);
     for (const k of Object.keys(patch)) {
-      if (allowed.includes(k)) rec[k] = patch[k];
+      if (!allowed.has(k)) delete patch[k];
     }
-    // 基本驗證
-    if (rec.rating != null) {
-      const r = Number(rec.rating);
-      if (!(r >= 1 && r <= 5)) return new Response("Invalid rating", { status: 400 });
-      rec.rating = r;
-    }
-    // 更新時間戳（非必要）
-    rec.updated_at = new Date().toISOString();
 
-    // 寫回
-    await store.setJSON(key, rec);
+    // rating：僅在有提供時檢核；空值視為不修改
+    if (Object.prototype.hasOwnProperty.call(patch, "rating")) {
+      if (patch.rating === "" || patch.rating == null) {
+        delete patch.rating;
+      } else {
+        const r = Number(patch.rating);
+        if (!(r >= 1 && r <= 5)) {
+          return new Response(JSON.stringify({ ok: false, error: "Invalid rating (must be 1-5)" }), { status: 400 });
+        }
+        patch.rating = r;
+      }
+    }
+
+    const updated = { ...rec, ...patch, updated_at: new Date().toISOString() };
+    await store.setJSON(key, updated);
 
     return new Response(JSON.stringify({ ok: true, key }), {
       status: 200, headers: { "Content-Type": "application/json; charset=utf-8" }
     });
   } catch (e) {
     console.error(e);
-    return new Response("Server error", { status: 500 });
+    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
+      status: 500, headers: { "Content-Type": "application/json; charset=utf-8" }
+    });
   }
 };
