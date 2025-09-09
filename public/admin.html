@@ -3,19 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>回饋管理後台 | 精萃提問教練</title>
+  <title>回饋管理後台（無金鑰）</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-800">
   <main class="max-w-5xl mx-auto p-6 space-y-4">
-    <header class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold">回饋管理後台</h1>
+    <header class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <h1 class="text-2xl font-bold">回饋管理後台（無金鑰）</h1>
       <div class="flex items-center gap-2">
-        <input id="adminKey" type="password" class="border rounded-lg px-3 py-2 w-72" placeholder="貼上 ADMIN_KEY（僅本機儲存）">
-        <button id="saveKey" class="rounded-lg bg-slate-800 text-white px-3 py-2">儲存金鑰</button>
+        <label class="text-sm flex items-center gap-2">
+          <input id="raw" type="checkbox" class="scale-110">
+          <span>顯示個資（不建議）</span>
+        </label>
         <button id="loadBtn" class="rounded-lg bg-emerald-600 text-white px-3 py-2">載入資料</button>
+        <button id="refreshBtn" class="rounded-lg border px-3 py-2">重新整理</button>
       </div>
     </header>
+
+    <p class="text-xs text-rose-600">
+      提醒：本頁為無金鑰公開版。預設遮蔽姓名/Email/IP；勾選「顯示個資」後，任何人皆可見。
+    </p>
 
     <section class="bg-white rounded-2xl shadow p-4">
       <div class="flex flex-wrap gap-3 items-end">
@@ -56,7 +63,6 @@
               <th class="px-3 py-2">姓名</th>
               <th class="px-3 py-2">Email</th>
               <th class="px-3 py-2">內容</th>
-              <th class="px-3 py-2">來源</th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -69,18 +75,8 @@
     const $ = (id) => document.getElementById(id);
     const state = { raw: [], view: [] };
 
-    // 讀寫本機儲存的 ADMIN_KEY
-    (function initKey() {
-      const k = localStorage.getItem("admin_key") || "";
-      $("adminKey").value = k;
-    })();
-
-    $("saveKey").addEventListener("click", () => {
-      localStorage.setItem("admin_key", $("adminKey").value.trim());
-      alert("已儲存。");
-    });
-
     $("loadBtn").addEventListener("click", loadData);
+    $("refreshBtn").addEventListener("click", loadData);
     $("q").addEventListener("input", applyFilters);
     $("category").addEventListener("change", applyFilters);
     $("minRating").addEventListener("change", applyFilters);
@@ -93,23 +89,19 @@
     $("exportCsv").addEventListener("click", exportCsv);
 
     async function loadData() {
-      const key = $("adminKey").value.trim();
-      if (!key) return alert("請先貼上 ADMIN_KEY。");
       $("status").textContent = "載入中…";
-
+      const showRaw = $("raw").checked;
       try {
-        const res = await fetch("/.netlify/functions/feedback-list", {
-          headers: { "x-admin-key": key }
-        });
+        const res = await fetch("/.netlify/functions/feedback-list" + (showRaw ? "?raw=1" : ""));
         if (!res.ok) throw new Error(await res.text());
-        const { data } = await res.json();
+        const { data, masked } = await res.json();
         state.raw = Array.isArray(data) ? data : [];
-        $("status").textContent = `已載入 ${state.raw.length} 筆。`;
+        $("status").textContent = `已載入 ${state.raw.length} 筆。` + (masked ? "（已遮蔽個資）" : "（顯示個資）");
         applyFilters();
       } catch (e) {
         console.error(e);
         $("status").textContent = "載入失敗。";
-        alert("讀取失敗，請確認金鑰或稍後再試。");
+        alert("讀取失敗，請稍後再試。");
       }
     }
 
@@ -118,13 +110,15 @@
       const cat = $("category").value;
       const minR = Number($("minRating").value || 1);
 
-      state.view = state.raw.filter(r => {
-        const txt = [r.message, r.category, r.name, r.email].filter(Boolean).join(" ").toLowerCase();
-        const passQ = q ? txt.includes(q) : true;
-        const passCat = cat ? r.category === cat : true;
-        const passRating = typeof r.rating === "number" ? r.rating >= minR : false;
-        return passQ && passCat && passRating;
-      }).sort((a,b) => (b.created_at || "").localeCompare(a.created_at || ""));
+      state.view = state.raw
+        .filter(r => {
+          const txt = [r.message, r.category, r.name, r.email].filter(Boolean).join(" ").toLowerCase();
+          const passQ = q ? txt.includes(q) : true;
+          const passCat = cat ? r.category === cat : true;
+          const passRating = typeof r.rating === "number" ? r.rating >= minR : false;
+          return passQ && passCat && passRating;
+        })
+        .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
 
       renderTable();
     }
@@ -134,15 +128,14 @@
       tb.innerHTML = "";
       for (const r of state.view) {
         const tr = document.createElement("tr");
-        tr.className = "border-b";
+        tr.className = "border-b align-top";
         tr.innerHTML = `
           <td class="px-3 py-2 whitespace-nowrap">${escapeHtml(r.created_at || "")}</td>
           <td class="px-3 py-2">${escapeHtml(String(r.rating ?? ""))}</td>
           <td class="px-3 py-2">${escapeHtml(r.category || "")}</td>
           <td class="px-3 py-2">${escapeHtml(r.name || "")}</td>
           <td class="px-3 py-2">${escapeHtml(r.email || "")}</td>
-          <td class="px-3 py-2 max-w-xl"><div class="line-clamp-3">${escapeHtml(r.message || "")}</div></td>
-          <td class="px-3 py-2 text-xs text-slate-500">${escapeHtml(r?.meta?.referer || r?.meta?.ua || "")}</td>
+          <td class="px-3 py-2 max-w-xl whitespace-pre-wrap break-words">${escapeHtml(r.message || "")}</td>
         `;
         tb.appendChild(tr);
       }
@@ -175,11 +168,7 @@
 
     function escapeHtml(s) {
       return String(s || "").replace(/[&<>"']/g, m => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
       }[m]));
     }
   </script>
