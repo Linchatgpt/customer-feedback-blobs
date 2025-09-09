@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>回饋管理後台（內嵌編輯版）</title>
+  <title>回饋管理後台</title>
   <meta name="robots" content="noindex,nofollow">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-800">
   <main class="max-w-6xl mx-auto p-6 space-y-4">
     <header class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-      <h1 class="text-2xl font-bold">回饋管理後台</h1>
+      <h1 class="text-2xl font-bold">回饋管理後台（無金鑰）</h1>
       <div class="flex items-center gap-2">
         <label class="text-sm flex items-center gap-2">
           <input id="raw" type="checkbox" class="scale-110">
@@ -72,8 +72,8 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const state = { raw: [], view: [], sel: new Set(), editing: null, masked: true };
-    window.state = state;
+    const state = { raw: [], view: [], sel: new Set() };
+    window.state = state; // 供 openEdit() 使用
 
     $("loadBtn").addEventListener("click", loadData);
     $("delSelected").addEventListener("click", deleteSelected);
@@ -98,8 +98,6 @@
         const { data, masked } = JSON.parse(text);
         state.raw = Array.isArray(data) ? data : [];
         state.sel.clear(); $("chkAll").checked = false;
-        state.editing = null;
-        state.masked = !!masked;
         $("status").textContent = `已載入 ${state.raw.length} 筆。` + (masked ? "（已遮蔽個資）" : "（顯示個資）");
         applyFilters();
       } catch (e) {
@@ -126,83 +124,28 @@
       const tb = $("tbody"); tb.innerHTML = "";
       for (const r of state.view) {
         const selected = state.sel.has(r._key);
-        const editing = state.editing === r._key;
-
         const tr = document.createElement("tr");
         tr.className = "border-b align-top";
-        tr.innerHTML = editing ? editRowHTML(r, selected) : viewRowHTML(r, selected);
-
-        // 綁定 row checkbox
+        tr.innerHTML = `
+          <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
+          <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
+          <td class="px-3 py-2">${esc(String(r.rating ?? ""))}</td>
+          <td class="px-3 py-2">${esc(r.category || "")}</td>
+          <td class="px-3 py-2">${esc(r.name || "")}</td>
+          <td class="px-3 py-2">${esc(r.email || "")}</td>
+          <td class="px-3 py-2 max-w-xl whitespace-pre-wrap break-words">${esc(r.message || "")}</td>
+          <td class="px-3 py-2">
+            <div class="flex gap-2">
+              <button class="rounded bg-amber-500 text-white px-2 py-1" onclick="openEdit('${r._key}')">編輯／儲存</button>
+              <button class="rounded bg-rose-600 text-white px-2 py-1" onclick="delOne('${r._key}')">刪除</button>
+            </div>
+          </td>
+        `;
         tr.querySelector(".rowchk").addEventListener("change", (e) => {
           if (e.target.checked) state.sel.add(r._key); else state.sel.delete(r._key);
         });
-
-        // 綁定操作按鈕
-        if (editing) {
-          tr.querySelector(".btn-save").addEventListener("click", () => saveRow(r._key, tr));
-          tr.querySelector(".btn-cancel").addEventListener("click", () => { state.editing = null; renderTable(); });
-        } else {
-          tr.querySelector(".btn-edit").addEventListener("click", () => { state.editing = r._key; renderTable(); });
-          tr.querySelector(".btn-del").addEventListener("click", () => delOne(r._key));
-        }
-
         tb.appendChild(tr);
       }
-    }
-
-    function viewRowHTML(r, selected) {
-      return `
-        <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
-        <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
-        <td class="px-3 py-2">${esc(String(r.rating ?? ""))}</td>
-        <td class="px-3 py-2">${esc(r.category || "")}</td>
-        <td class="px-3 py-2">${esc(r.name || "")}</td>
-        <td class="px-3 py-2">${esc(r.email || "")}</td>
-        <td class="px-3 py-2 max-w-xl whitespace-pre-wrap break-words">${esc(r.message || "")}</td>
-        <td class="px-3 py-2">
-          <div class="flex gap-2">
-            <button class="btn-edit rounded bg-amber-500 text-white px-2 py-1">編輯</button>
-            <button class="btn-del rounded bg-rose-600 text-white px-2 py-1">刪除</button>
-          </div>
-        </td>
-      `;
-    }
-
-    function editRowHTML(r, selected) {
-      const disPII = state.masked ? 'disabled title="已遮蔽，切換上方『顯示個資』再編輯"' : "";
-      return `
-        <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
-        <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
-        <td class="px-3 py-2">
-          <input name="rating" type="number" min="1" max="5" value="${escAttr(r.rating ?? "")}" class="border rounded px-2 py-1 w-16">
-        </td>
-        <td class="px-3 py-2">
-          <select name="category" class="border rounded px-2 py-1">
-            ${opt("","請選擇", r.category)}${opt("coaching","教練服務", r.category)}${opt("training","訓練課程", r.category)}
-            ${opt("materials","教材與資料", r.category)}${opt("support","客服與支援", r.category)}${opt("others","其他", r.category)}
-          </select>
-        </td>
-        <td class="px-3 py-2">
-          <input name="name" ${disPII} value="${escAttr(r.name || "")}" class="border rounded px-2 py-1 w-36">
-        </td>
-        <td class="px-3 py-2">
-          <input name="email" ${disPII} value="${escAttr(r.email || "")}" class="border rounded px-2 py-1 w-56">
-        </td>
-        <td class="px-3 py-2">
-          <textarea name="message" rows="3" class="border rounded px-2 py-1 w-96">${esc(r.message || "")}</textarea>
-        </td>
-        <td class="px-3 py-2">
-          <div class="flex gap-2">
-            <button class="btn-save rounded bg-emerald-600 text-white px-2 py-1">儲存</button>
-            <button class="btn-cancel rounded border px-2 py-1">放棄</button>
-          </div>
-        </td>
-      `;
-    }
-
-    function opt(val, label, current) {
-      const sel = (val === (current || "")) ? "selected" : "";
-      return `<option value="${escAttr(val)}" ${sel}>${esc(label)}</option>`;
     }
 
     async function delOne(key) {
@@ -236,35 +179,25 @@
       }
     }
 
-    async function saveRow(key, tr) {
-      const q = (sel) => tr.querySelector(sel);
-      const orig = state.raw.find(x => x._key === key);
-      if (!orig) return alert("找不到資料列");
+    // 最小可用：用 prompt 編輯並直接送更新 API
+    async function openEdit(key) {
+      const row = (window.state?.raw || []).find(x => x._key === key);
+      if (!row) return alert("找不到資料列");
 
-      // 擷取目前輸入
-      const ratingVal = q('input[name="rating"]').value;
-      const categoryVal = q('select[name="category"]').value;
-      const nameVal = q('input[name="name"]').value;
-      const emailVal = q('input[name="email"]').value;
-      const msgVal = q('textarea[name="message"]').value;
+      const ratingIn = prompt("評分 (1-5)：留空則不更動", row.rating ?? "");
+      const categoryIn = prompt("類別（coaching/training/materials/support/others）：留空則不更動", row.category ?? "");
+      const nameIn = prompt("姓名：留空則不更動", row.name ?? "");
+      const emailIn = prompt("Email：留空則不更動", row.email ?? "");
+      const msgIn = prompt("內容：留空則不更動", row.message ?? "");
 
-      // 組 patch（只送變更且非空）
       const patch = {};
-      if (ratingVal !== "") {
-        const r = Number(ratingVal);
-        if (!(r >= 1 && r <= 5)) return alert("評分需為 1–5");
-        if (r !== Number(orig.rating ?? 0)) patch.rating = r;
-      }
-      if (categoryVal !== (orig.category || "")) patch.category = categoryVal;
-      if (!state.masked) {
-        if (nameVal !== (orig.name || "")) patch.name = nameVal;
-        if (emailVal !== (orig.email || "")) patch.email = emailVal;
-      }
-      if (msgVal !== (orig.message || "")) patch.message = msgVal;
+      if (ratingIn !== null && ratingIn !== "") patch.rating = Number(ratingIn);
+      if (categoryIn !== null && categoryIn !== "") patch.category = categoryIn;
+      if (nameIn !== null && nameIn !== "") patch.name = nameIn;
+      if (emailIn !== null && emailIn !== "") patch.email = emailIn;
+      if (msgIn !== null && msgIn !== "") patch.message = msgIn;
 
-      if (Object.keys(patch).length === 0) {
-        state.editing = null; renderTable(); return;
-      }
+      if (Object.keys(patch).length === 0) return;
 
       try {
         const res = await fetch("/.netlify/functions/feedback-update", {
@@ -275,11 +208,9 @@
         let j = {}; try { j = JSON.parse(text); } catch {}
         if (!res.ok || !j?.ok) throw new Error(j?.error || text || `HTTP ${res.status}`);
 
-        // 本地同步
+        // 本地同步更新
         const i = state.raw.findIndex(x => x._key === key);
         if (i >= 0) state.raw[i] = { ...state.raw[i], ...patch, updated_at: new Date().toISOString() };
-
-        state.editing = null;
         $("status").textContent = "已儲存變更。";
         applyFilters();
       } catch (e) {
@@ -305,7 +236,6 @@
 
     function csvCell(v) { if (v == null) return '""'; const s = String(v).replace(/"/g, '""'); return `"${s}"`; }
     function esc(s) { return String(s||"").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
-    function escAttr(s){ return esc(String(s||"")); }
   </script>
 </body>
 </html>
