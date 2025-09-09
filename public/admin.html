@@ -295,24 +295,47 @@ function editRowHTML(r, selected) {
       }
     }
 
-    function exportCsv() {
+   <script>
+  function toCsvCell(val) {
+    if (val == null) return '""';
+    // 1) 轉字串  2) 轉義雙引號  3) 正規化換行
+    const s = String(val).replace(/"/g, '""').replace(/\r?\n/g, '\n');
+    return `"${s}"`;
+  }
+
+  function exportCsv() {
+    try {
+      const data = (Array.isArray(state.view) && state.view.length) ? state.view : (state.raw || []);
       const header = ["_key","created_at","rating","category","name","email","message"];
       const lines = [header.join(",")];
-      for (const r of state.view) {
-        const row = header.map(k => csvCell(r[k]));
-        lines.push(row.join(","));
-      }
-      const csv = lines.join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `feedback_export_${new Date().toISOString().slice(0,10)}.csv`;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    }
 
-    function csvCell(v) { if (v == null) return '""'; const s = String(v).replace(/"/g, '""'); return `"${s}"`; }
-    function esc(s) { return String(s||"").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
-    function escAttr(s){ return esc(String(s||"")); }
-  </script>
-</body>
-</html>
+      for (const r of data) {
+        lines.push(header.map(k => toCsvCell(r[k])).join(","));
+      }
+
+      // 加 BOM（\ufeff）避免 Excel 中文亂碼；用 CRLF 做列分隔
+      const bom = "\ufeff";
+      const csv = bom + lines.join("\r\n");
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const filename = `feedback_${new Date().toISOString().slice(0,10)}.csv`;
+
+      // 下載（含 IE/Edge 舊版 fallback）
+      if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+        window.navigator.msSaveOrOpenBlob(blob, filename);
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 0);
+      }
+
+      document.getElementById("status")?.textContent = `已匯出 ${data.length} 筆為 CSV。`;
+    } catch (e) {
+      console.error("CSV export error:", e);
+      alert("CSV 匯出失敗：" + String(e).slice(0,200));
+    }
+  }
+</script>
