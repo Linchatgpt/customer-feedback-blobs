@@ -2,12 +2,8 @@ import { getStore } from "@netlify/blobs";
 
 export const handler = async (event) => {
   try {
-    const adminKey = process.env.ADMIN_KEY;
-    const provided = event.headers["x-admin-key"];
-    if (!adminKey || provided !== adminKey) {
-      return { statusCode: 401, body: "Unauthorized" };
-    }
-
+    // 無金鑰版本：任何人都能讀取。?raw=1 會顯示未遮罩欄位（不建議）。
+    const raw = event?.queryStringParameters?.raw === "1";
     const store = getStore({ name: process.env.BLOBS_STORE || "customer-feedback" });
 
     let items = [];
@@ -24,13 +20,19 @@ export const handler = async (event) => {
     const results = [];
     for (const it of items) {
       const { value } = await store.getWithMetadata(it.key, { type: "json", consistency: "strong" });
-      results.push(value);
+      const rec = { ...value };
+      if (!raw) {
+        delete rec.email;
+        delete rec.name;
+        if (rec.meta) { delete rec.meta.ip; delete rec.meta.ua; delete rec.meta.referer; }
+      }
+      results.push(rec);
     }
 
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ count: results.length, data: results })
+      body: JSON.stringify({ count: results.length, masked: !raw, data: results })
     };
   } catch (e) {
     console.error(e);
