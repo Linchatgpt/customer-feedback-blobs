@@ -50,7 +50,8 @@
         </div>
       </div>
 
-      <div class="overflow-x-auto mt-3">
+      <!-- ✅ relative 讓右側 sticky 動作欄能正確固定 -->
+      <div class="overflow-x-auto relative mt-3">
         <table class="min-w-full text-sm" id="tbl">
           <thead>
             <tr class="bg-slate-100 text-left">
@@ -61,7 +62,7 @@
               <th class="px-3 py-2">姓名</th>
               <th class="px-3 py-2">Email</th>
               <th class="px-3 py-2">內容</th>
-              <th class="px-3 py-2">操作</th>
+              <th class="px-3 py-2 sticky right-0 bg-slate-100">操作</th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -75,6 +76,7 @@
     const state = { raw: [], view: [], sel: new Set(), editing: null, masked: true };
     window.state = state;
 
+    // 綁定事件
     $("loadBtn").addEventListener("click", loadData);
     $("delSelected").addEventListener("click", deleteSelected);
     $("raw").addEventListener("change", loadData);
@@ -87,7 +89,9 @@
       state.view.forEach(r => checked ? state.sel.add(r._key) : state.sel.delete(r._key));
       renderTable();
     });
+    $("exportCsv").addEventListener("click", exportCsv);
 
+    // 載入資料
     async function loadData() {
       const showRaw = $("raw").checked;
       $("status").textContent = "載入中…";
@@ -108,6 +112,7 @@
       }
     }
 
+    // 篩選
     function applyFilters() {
       const q = $("q").value.trim().toLowerCase();
       const cat = $("category").value;
@@ -122,6 +127,7 @@
       renderTable();
     }
 
+    // 繪表
     function renderTable() {
       const tb = $("tbody"); tb.innerHTML = "";
       for (const r of state.view) {
@@ -132,12 +138,12 @@
         tr.className = "border-b align-top";
         tr.innerHTML = editing ? editRowHTML(r, selected) : viewRowHTML(r, selected);
 
-        // 綁定 row checkbox
+        // row checkbox
         tr.querySelector(".rowchk").addEventListener("change", (e) => {
           if (e.target.checked) state.sel.add(r._key); else state.sel.delete(r._key);
         });
 
-        // 綁定操作按鈕
+        // 操作按鈕
         if (editing) {
           tr.querySelector(".btn-save").addEventListener("click", () => saveRow(r._key, tr));
           tr.querySelector(".btn-cancel").addEventListener("click", () => { state.editing = null; renderTable(); });
@@ -150,60 +156,60 @@
       }
     }
 
-     function viewRowHTML(r, selected) {
-    return `
-      <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
-      <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
-      <td class="px-3 py-2">${esc(String(r.rating ?? ""))}</td>
-      <td class="px-3 py-2">${esc(r.category || "")}</td>
-      <td class="px-3 py-2">${esc(r.name || "")}</td>
-      <td class="px-3 py-2">${esc(r.email || "")}</td>
-      <td class="px-3 py-2 max-w-[28rem] md:max-w-[36rem]">
-        <div class="whitespace-pre-wrap break-words">${esc(r.message || "")}</div>
-      </td>
-      <!-- ✅ 黏在右側，永遠可見 -->
-      <td class="px-3 py-2 whitespace-nowrap sticky right-0 bg-white">
-        <div class="flex gap-2">
-          <button class="btn-edit rounded bg-amber-500 text-white px-2 py-1">編輯</button>
-          <button class="btn-del rounded bg-rose-600 text-white px-2 py-1">刪除</button>
-        </div>
-      </td>
+    // 顯示列
+    function viewRowHTML(r, selected) {
+      return `
+        <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
+        <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
+        <td class="px-3 py-2">${esc(String(r.rating ?? ""))}</td>
+        <td class="px-3 py-2">${esc(r.category || "")}</td>
+        <td class="px-3 py-2">${esc(r.name || "")}</td>
+        <td class="px-3 py-2">${esc(r.email || "")}</td>
+        <td class="px-3 py-2 max-w-[28rem] md:max-w-[36rem]">
+          <div class="whitespace-pre-wrap break-words">${esc(r.message || "")}</div>
+        </td>
+        <!-- 右側固定 -->
+        <td class="px-3 py-2 whitespace-nowrap sticky right-0 bg-white">
+          <div class="flex gap-2">
+            <button class="btn-edit rounded bg-amber-500 text-white px-2 py-1">編輯</button>
+            <button class="btn-del rounded bg-rose-600 text-white px-2 py-1">刪除</button>
+          </div>
+        </td>
       `;
     }
 
-function editRowHTML(r, selected) {
-    const disPII = state.masked ? 'disabled title="已遮蔽，切換上方『顯示個資』再編輯"' : "";
-    return `
-      <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
-      <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
-      <td class="px-3 py-2">
-        <input name="rating" type="number" min="1" max="5" value="${escAttr(r.rating ?? "")}"
-               class="border rounded px-2 py-1 w-16">
-      </td>
-      <td class="px-3 py-2">
-        <select name="category" class="border rounded px-2 py-1">
-          ${opt("","請選擇", r.category)}${opt("coaching","教練服務", r.category)}${opt("training","訓練課程", r.category)}
-          ${opt("materials","教材與資料", r.category)}${opt("support","客服與支援", r.category)}${opt("others","其他", r.category)}
-        </select>
-      </td>
-      <td class="px-3 py-2">
-        <input name="name" ${disPII} value="${escAttr(r.name || "")}" class="border rounded px-2 py-1 w-36">
-      </td>
-      <td class="px-3 py-2">
-        <input name="email" ${disPII} value="${escAttr(r.email || "")}" class="border rounded px-2 py-1 w-56">
-      </td>
-      <!-- 收斂內容欄位寬度，避免擠出畫面；小尺寸滿版、桌機上限 -->
-      <td class="px-3 py-2">
-        <textarea name="message" rows="3"
-          class="border rounded px-2 py-1 w-full max-w-[28rem] md:max-w-[36rem] md:w-[36rem]">${esc(r.message || "")}</textarea>
-      </td>
-      <!-- ✅ 黏住右側；小螢幕時自動換行堆疊 -->
-      <td class="px-3 py-2 whitespace-nowrap sticky right-0 bg-white">
-        <div class="flex gap-2 md:flex-row flex-col items-start">
-          <button class="btn-save rounded bg-emerald-600 text-white px-3 py-1">儲存</button>
-          <button class="btn-cancel rounded border px-3 py-1">放棄</button>
-        </div>
-      </td>
+    // 編輯列
+    function editRowHTML(r, selected) {
+      const disPII = state.masked ? 'disabled title="已遮蔽，切換上方『顯示個資』再編輯"' : "";
+      return `
+        <td class="px-3 py-2"><input type="checkbox" class="rowchk" ${selected ? "checked":""}></td>
+        <td class="px-3 py-2 whitespace-nowrap">${esc(r.created_at || "")}</td>
+        <td class="px-3 py-2">
+          <input name="rating" type="number" min="1" max="5" value="${escAttr(r.rating ?? "")}" class="border rounded px-2 py-1 w-16">
+        </td>
+        <td class="px-3 py-2">
+          <select name="category" class="border rounded px-2 py-1">
+            ${opt("","請選擇", r.category)}${opt("coaching","教練服務", r.category)}${opt("training","訓練課程", r.category)}
+            ${opt("materials","教材與資料", r.category)}${opt("support","客服與支援", r.category)}${opt("others","其他", r.category)}
+          </select>
+        </td>
+        <td class="px-3 py-2">
+          <input name="name" ${disPII} value="${escAttr(r.name || "")}" class="border rounded px-2 py-1 w-36">
+        </td>
+        <td class="px-3 py-2">
+          <input name="email" ${disPII} value="${escAttr(r.email || "")}" class="border rounded px-2 py-1 w-56">
+        </td>
+        <td class="px-3 py-2">
+          <!-- 收斂寬度，避免擠出畫面 -->
+          <textarea name="message" rows="3" class="border rounded px-2 py-1 w-full max-w-[28rem] md:max-w-[36rem] md:w-[36rem]">${esc(r.message || "")}</textarea>
+        </td>
+        <!-- 右側固定 -->
+        <td class="px-3 py-2 whitespace-nowrap sticky right-0 bg-white">
+          <div class="flex gap-2 md:flex-row flex-col items-start">
+            <button class="btn-save rounded bg-emerald-600 text-white px-3 py-1">儲存</button>
+            <button class="btn-cancel rounded border px-3 py-1">放棄</button>
+          </div>
+        </td>
       `;
     }
 
@@ -212,11 +218,13 @@ function editRowHTML(r, selected) {
       return `<option value="${escAttr(val)}" ${sel}>${esc(label)}</option>`;
     }
 
+    // 單筆刪除
     async function delOne(key) {
       if (!confirm("確定要刪除此筆？此動作無法復原。")) return;
       await callDelete([key]);
     }
 
+    // 多選刪除
     async function deleteSelected() {
       const keys = Array.from(state.sel);
       if (keys.length === 0) return alert("請先勾選要刪除的資料。");
@@ -224,6 +232,7 @@ function editRowHTML(r, selected) {
       await callDelete(keys);
     }
 
+    // 呼叫刪除 API
     async function callDelete(keys) {
       try {
         const res = await fetch("/.netlify/functions/feedback-delete", {
@@ -243,12 +252,13 @@ function editRowHTML(r, selected) {
       }
     }
 
+    // 儲存編輯
     async function saveRow(key, tr) {
       const q = (sel) => tr.querySelector(sel);
       const orig = state.raw.find(x => x._key === key);
       if (!orig) return alert("找不到資料列");
 
-      // 擷取目前輸入
+      // 擷取當前輸入
       const ratingVal = q('input[name="rating"]').value;
       const categoryVal = q('select[name="category"]').value;
       const nameVal = q('input[name="name"]').value;
@@ -269,9 +279,7 @@ function editRowHTML(r, selected) {
       }
       if (msgVal !== (orig.message || "")) patch.message = msgVal;
 
-      if (Object.keys(patch).length === 0) {
-        state.editing = null; renderTable(); return;
-      }
+      if (Object.keys(patch).length === 0) { state.editing = null; renderTable(); return; }
 
       try {
         const res = await fetch("/.netlify/functions/feedback-update", {
@@ -295,47 +303,38 @@ function editRowHTML(r, selected) {
       }
     }
 
-
-  function toCsvCell(val) {
-    if (val == null) return '""';
-    // 1) 轉字串  2) 轉義雙引號  3) 正規化換行
-    const s = String(val).replace(/"/g, '""').replace(/\r?\n/g, '\n');
-    return `"${s}"`;
-  }
-
-  function exportCsv() {
-    try {
-      const data = (Array.isArray(state.view) && state.view.length) ? state.view : (state.raw || []);
-      const header = ["_key","created_at","rating","category","name","email","message"];
-      const lines = [header.join(",")];
-
-      for (const r of data) {
-        lines.push(header.map(k => toCsvCell(r[k])).join(","));
-      }
-
-      // 加 BOM（\ufeff）避免 Excel 中文亂碼；用 CRLF 做列分隔
-      const bom = "\ufeff";
-      const csv = bom + lines.join("\r\n");
-
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const filename = `feedback_${new Date().toISOString().slice(0,10)}.csv`;
-
-      // 下載（含 IE/Edge 舊版 fallback）
-      if (window.navigator && window.navigator.msSaveOrOpenBlob) {
-        window.navigator.msSaveOrOpenBlob(blob, filename);
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 0);
-      }
-
-      document.getElementById("status")?.textContent = `已匯出 ${data.length} 筆為 CSV。`;
-    } catch (e) {
-      console.error("CSV export error:", e);
-      alert("CSV 匯出失敗：" + String(e).slice(0,200));
+    // 匯出 CSV（含 BOM、CRLF、轉義）
+    function csvCell(val) {
+      if (val == null) return '""';
+      const s = String(val).replace(/"/g, '""').replace(/\r?\n/g, '\n');
+      return `"${s}"`;
     }
-  }
-</script>
+    function exportCsv() {
+      try {
+        const data = (Array.isArray(state.view) && state.view.length) ? state.view : (state.raw || []);
+        const header = ["_key","created_at","rating","category","name","email","message"];
+        const lines = [header.join(",")];
+        for (const r of data) lines.push(header.map(k => csvCell(r[k])).join(","));
+
+        const csv = "\ufeff" + lines.join("\r\n"); // BOM + CRLF
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url  = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = `feedback_${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 0);
+
+        $("status")?.textContent = `已匯出 ${data.length} 筆為 CSV。`;
+      } catch (e) {
+        console.error("CSV export error:", e);
+        alert("CSV 匯出失敗：" + String(e).slice(0,200));
+      }
+    }
+
+    // 工具
+    function esc(s) { return String(s||"").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
+    function escAttr(s){ return esc(String(s||"")); }
+  </script>
+</body>
+</html>
+
