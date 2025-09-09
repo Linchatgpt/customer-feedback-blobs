@@ -1,74 +1,56 @@
 import { getStore } from "@netlify/blobs";
 
-export const handler = async (event, context) => {
+export default async (req) => {
   try {
-    if (event.httpMethod !== "POST") {
-      return { statusCode: 405, body: "Method Not Allowed" };
-    }
+    if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
-    const contentType = event.headers["content-type"] || "";
+    const contentType = req.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
-      return { statusCode: 400, body: "Invalid content type" };
+      return new Response("Invalid content type", { status: 400 });
     }
 
-    const data = JSON.parse(event.body || "{}");
-
+    const data = await req.json();
     const { name = "", email = "", rating, category = "", message = "", consent } = data;
-    if (!message || typeof rating !== "number" || rating < 1 || rating > 5) {
-      return { statusCode: 400, body: "Missing or invalid fields" };
-    }
-    if (consent !== true) {
-      return { statusCode: 400, body: "Consent is required" };
-    }
 
-    if (data.website) {
-      return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+    if (!message || typeof rating !== "number" || rating < 1 || rating > 5) {
+      return new Response("Missing or invalid fields", { status: 400 });
     }
+    if (consent !== true) return new Response("Consent is required", { status: 400 });
+    if (data.website) return new Response(JSON.stringify({ ok: true }), { status: 200 }); // 蜜罐
 
     const now = new Date();
     const key = `feedback/${now.toISOString()}_${cryptoRandom()}.json`;
 
     const payload = {
-      name,
-      email,
-      rating,
-      category,
-      message,
-      consent: true,
+      name, email, rating, category, message, consent: true,
       created_at: now.toISOString(),
       meta: {
-        ip: event.headers["x-nf-client-connection-ip"] || null,
-        ua: event.headers["user-agent"] || null,
-        referer: event.headers["referer"] || null
+        ip: req.headers.get("x-nf-client-connection-ip"),
+        ua: req.headers.get("user-agent"),
+        referer: req.headers.get("referer")
       }
     };
 
- const store = getStore(process.env.BLOBS_STORE || "customer-feedback");
+    // ✅ v2 正確用法：以「字串」指定 store 名稱
+    const store = getStore(process.env.BLOBS_STORE || "customer-feedback");
     await store.setJSON(key, payload, {
-      metadata: {
-        rating: String(rating),
-        category,
-        src: "webform"
-      },
+      metadata: { rating: String(rating), category, src: "webform" },
       onlyIfNew: true
     });
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ ok: true })
-    };
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json; charset=utf-8" }
+    });
   } catch (err) {
     console.error(err);
-    return { statusCode: 500, body: "Server error" };
+    return new Response("Server error", { status: 500 });
   }
 };
 
 function cryptoRandom(len = 8) {
   const bytes = new Uint8Array(len);
-  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < len; i++) bytes[i] = Math.floor(Math.random() * 256);
-  }
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  (globalThis.crypto?.getRandomValues ? crypto.getRandomValues(bytes)
+                                      : bytes.fill(0).forEach((_,i)=>bytes[i]=Math.floor(Math.random()*256)));
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
 }
